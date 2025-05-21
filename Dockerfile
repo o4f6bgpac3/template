@@ -5,14 +5,14 @@ WORKDIR /build
 COPY frontend/ ./frontend/
 # Build frontend
 WORKDIR /build/frontend
-RUN yarn install && yarn build
+RUN npm install && npm run prebuild && npm run build
 
 FROM golang:1.24-bullseye AS app-builder
 WORKDIR /build
 # Copy Go source code
 COPY . .
 # Copy the built frontend from the previous stage
-COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
+COPY --from=frontend-builder /build/frontend/build ./frontend/build
 
 # Build the Go application (without the git variables)
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags release,viper_bind_struct -a \

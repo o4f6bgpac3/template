@@ -8,9 +8,9 @@ import (
 	"io/fs"
 )
 
-//go:embed frontend/dist/*
+//go:embed frontend/build/*
 var embeddedFiles embed.FS
 
 func GetStaticFS() (fs.FS, error) {
-	return fs.Sub(embeddedFiles, "frontend/dist")
+	return fs.Sub(embeddedFiles, "frontend/build")
 }
