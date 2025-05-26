@@ -14,10 +14,10 @@ func Setup(r chi.Router) {
 	r.Use(middleware.RealIP)
 
 	secureMiddleware := secure.New(secure.Options{
-		AllowedHosts:                  cfg.Config.Http.Hosts,
+		AllowedHosts:                  cfg.Config.HTTP.Hosts,
 		HostsProxyHeaders:             []string{"X-Forwarded-Hosts"},
 		SSLRedirect:                   true,
-		SSLHost:                       cfg.Config.Http.BaseURL,
+		SSLHost:                       cfg.Config.HTTP.BaseURL,
 		SSLProxyHeaders:               map[string]string{"X-Forwarded-Proto": "https"},
 		STSSeconds:                    31536000, // 1 year
 		STSIncludeSubdomains:          true,

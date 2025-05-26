@@ -50,6 +50,7 @@ var devCmd = &cobra.Command{
 
 				svc.Log.Info().Msg("Shutting down development API server")
 				_ = srv.Shutdown(ctx)
+				svc.Cleanup()
 			},
 		)
 

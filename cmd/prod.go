@@ -63,6 +63,7 @@ var prodCmd = &cobra.Command{
 
 				svc.Log.Info().Msg("Shutting down HTTP server")
 				_ = srv.Shutdown(ctx)
+				svc.Cleanup()
 			},
 		)
 

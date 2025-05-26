@@ -1,9 +1,9 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="backend" type="GoApplicationRunConfiguration" factoryName="Go Application">
+  <configuration default="false" name="migrate" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="railway" />
     <working_directory value="$PROJECT_DIR$" />
     <go_parameters value="-tags dev,viper_bind_struct" />
-    <parameters value="dev" />
+    <parameters value="migrate" />
     <EXTENSION ID="net.ashald.envfile">
       <option name="IS_ENABLED" value="true" />
       <option name="IS_SUBST" value="false" />

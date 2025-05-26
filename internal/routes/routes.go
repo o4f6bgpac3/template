@@ -1,7 +1,9 @@
 package routes
 
 import (
+	"encoding/json"
 	"github.com/go-chi/chi/v5"
+	"github.com/o4f6bgpac3/template/internal/middleware"
 	"github.com/o4f6bgpac3/template/internal/services"
 	"io/fs"
 	"mime"
@@ -14,7 +16,7 @@ import (
 )
 
 func Setup(r chi.Router, fSys fs.FS, svc *services.Services) {
-	api(r)
+	api(r, svc)
 
 	if fSys == nil {
 		// Development mode
@@ -67,11 +69,39 @@ func Setup(r chi.Router, fSys fs.FS, svc *services.Services) {
 	}
 }
 
-func api(r chi.Router) {
+func api(r chi.Router, svc *services.Services) {
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("OK"))
+		})
+
+		// Setup auth routes
+		setupAuthRoutes(r, svc)
+
+		// Example protected route
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAuth(svc.Auth, svc.Audit))
+			r.Get("/protected", func(w http.ResponseWriter, r *http.Request) {
+				claims, _ := middleware.GetUserFromContext(r.Context())
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"message": "This is a protected route",
+					"user":    claims,
+				})
+			})
+		})
+
+		// Example admin-only route
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAuth(svc.Auth, svc.Audit))
+			r.Use(middleware.RequireRole(svc.Audit, "admin"))
+			r.Get("/admin", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"message": "Admin access granted",
+				})
+			})
 		})
 	})
 }
