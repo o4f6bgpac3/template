@@ -35,6 +35,7 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	// User session queries
 	CreateUserSession(ctx context.Context, arg CreateUserSessionParams) (UserSession, error)
+	DeactivateUser(ctx context.Context, id uuid.UUID) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	GetActiveSessions(ctx context.Context, userID uuid.UUID) ([]UserSession, error)
 	GetAuditLogs(ctx context.Context, arg GetAuditLogsParams) ([]AuditLog, error)

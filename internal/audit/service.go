@@ -25,6 +25,7 @@ const (
 	EventUserPasswordChange EventType = "user_password_change"
 	EventUserAccountLocked  EventType = "user_account_locked"
 	EventPermissionDenied   EventType = "permission_denied"
+	EventUserDelete         EventType = "user_delete"
 )
 
 type Service struct {

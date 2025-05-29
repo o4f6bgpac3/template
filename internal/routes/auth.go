@@ -41,6 +41,10 @@ type changePasswordRequest struct {
 	NewPassword string `json:"new_password"`
 }
 
+type deleteAccountRequest struct {
+	Password string `json:"password"`
+}
+
 type forgotPasswordRequest struct {
 	Email string `json:"email"`
 }
@@ -87,6 +91,7 @@ func setupAuthRoutes(r chi.Router, svc *services.Services) {
 			r.Get("/me", h.getCurrentUser)
 			r.Post("/logout-all", h.logoutAll)
 			r.Put("/change-password", h.changePassword)
+			r.Delete("/delete-account", h.deleteAccount)
 			r.Get("/sessions", h.getActiveSessions)
 			r.Delete("/sessions/{sessionId}", h.invalidateSession)
 		})
@@ -267,7 +272,46 @@ func (h *authHandler) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	h.clearCookie(w)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Password changed successfully. Please log in again.",
+	})
+}
+
+func (h *authHandler) deleteAccount(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		h.writeError(w, "Unauthorized", http.StatusUnauthorized, nil)
+		return
+	}
+
+	var req deleteAccountRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeError(w, "Invalid request body", http.StatusBadRequest, nil)
+		return
+	}
+
+	if err := h.authService.DeleteAccount(r.Context(), r, userID, req.Password); err != nil {
+		switch {
+		case errors.Is(err, auth.ErrInvalidCredentials):
+			h.writeError(w, "Invalid password", http.StatusBadRequest, nil)
+		default:
+			var validationErr *validation.ValidationErrors
+			if errors.As(err, &validationErr) {
+				h.writeError(w, "Validation failed", http.StatusBadRequest, validationErr.Errors)
+				return
+			}
+			h.writeError(w, "Failed to delete account", http.StatusInternalServerError, nil)
+		}
+		return
+	}
+
+	h.clearCookie(w)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Account deleted successfully",
+	})
 }
 
 func (h *authHandler) forgotPassword(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,7 @@ package middleware
 import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	"github.com/o4f6bgpac3/template/cfg"
 	"github.com/unrolled/secure"
 )
@@ -36,4 +37,24 @@ func Setup(r chi.Router) {
 		IsDevelopment:                 false,
 	})
 	r.Use(secureMiddleware.Handler)
+}
+
+func SetupDev(r chi.Router) {
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+
+	// Development CORS - cannot use wildcard with credentials
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins: []string{
+			"http://localhost:5173",
+			"http://localhost:3000",
+		},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Requested-With"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
 }

@@ -38,9 +38,13 @@ SET
 WHERE id = $1
 RETURNING *;
 
--- name: DeleteUser :exec
+-- name: DeactivateUser :exec
 UPDATE users
 SET is_active = false
+WHERE id = $1;
+
+-- name: DeleteUser :exec
+DELETE FROM users
 WHERE id = $1;
 
 -- name: LockUserAccount :exec

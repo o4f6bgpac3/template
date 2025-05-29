@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"github.com/go-chi/chi/v5"
+	"github.com/o4f6bgpac3/template/internal/middleware"
 	"github.com/o4f6bgpac3/template/internal/routes"
 	"github.com/o4f6bgpac3/template/internal/services"
 	"github.com/oklog/run"
@@ -24,6 +25,7 @@ var devCmd = &cobra.Command{
 		var g run.Group
 		r := chi.NewMux()
 
+		middleware.SetupDev(r)
 		routes.Setup(r, nil, svc)
 
 		port := os.Getenv("PORT")

@@ -53,13 +53,12 @@ func (s *Service) ChangePassword(ctx context.Context, r *http.Request, userID uu
 	err = s.db.Transaction(ctx, func(tx pgx.Tx) error {
 		qtx := s.queries.WithTx(tx)
 
-		hashStr := string(hash)
-		_, err = qtx.UpdateUser(ctx, db.UpdateUserParams{
-			ID:           userID,
-			PasswordHash: hashStr,
+		err := s.updateUser(ctx, tx, userID, func(ctx context.Context, user *db.User) error {
+			user.PasswordHash = string(hash)
+			return nil
 		})
 		if err != nil {
-			return fmt.Errorf("update password: %w", err)
+			return err
 		}
 
 		if cfg.Config.Auth.PasswordHistoryLimit > 0 {
@@ -130,8 +129,6 @@ func (s *Service) CreatePasswordResetToken(ctx context.Context, email string) er
 		return err
 	}
 
-	// TODO: Send email with reset link containing the token
-	// The token should be sent via email, not returned in the response
 	return nil
 }
 
@@ -167,13 +164,12 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 			return fmt.Errorf("mark token as used: %w", err)
 		}
 
-		hashStr := string(hash)
-		_, err = qtx.UpdateUser(ctx, db.UpdateUserParams{
-			ID:           user.ID,
-			PasswordHash: hashStr,
+		err = s.updateUser(ctx, tx, user.ID, func(ctx context.Context, user *db.User) error {
+			user.PasswordHash = string(hash)
+			return nil
 		})
 		if err != nil {
-			return fmt.Errorf("update password: %w", err)
+			return err
 		}
 
 		if cfg.Config.Auth.PasswordHistoryLimit > 0 {

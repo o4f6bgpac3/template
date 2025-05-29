@@ -67,9 +67,9 @@ func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 		}
 
 		emailVerified := true
-		_, err = qtx.UpdateUser(ctx, db.UpdateUserParams{
-			ID:            verificationToken.UserID,
-			EmailVerified: &emailVerified,
+		err = s.updateUser(ctx, tx, verificationToken.UserID, func(ctx context.Context, user *db.User) error {
+			user.EmailVerified = &emailVerified
+			return nil
 		})
 		if err != nil {
 			return fmt.Errorf("mark email as verified: %w", err)
