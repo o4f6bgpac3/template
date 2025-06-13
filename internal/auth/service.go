@@ -26,6 +26,7 @@ var (
 	ErrEmailNotVerified     = errors.New("email not verified")
 	ErrRegistrationDisabled = errors.New("self-registration is disabled")
 	ErrPasswordReused       = errors.New("password was recently used")
+	ErrWeakJWTSecret        = errors.New("JWT secret is too weak")
 )
 
 type Service struct {
@@ -48,12 +49,17 @@ type Tokens struct {
 	ExpiresAt    time.Time `json:"expires_at"`
 }
 
-func NewService(db *database.DB, queries *db.Queries, auditService *audit.Service) *Service {
+func NewService(db *database.DB, queries *db.Queries, auditService *audit.Service) (*Service, error) {
+	// Validate JWT secret strength
+	if err := validateJWTSecret(cfg.Config.Auth.JWTSecret); err != nil {
+		return nil, fmt.Errorf("JWT secret validation failed: %w", err)
+	}
+
 	return &Service{
 		db:      db,
 		queries: queries,
 		audit:   auditService,
-	}
+	}, nil
 }
 
 func (s *Service) CheckPermission(ctx context.Context, userID uuid.UUID, resource, action string) (bool, error) {
@@ -180,4 +186,35 @@ func (s *Service) generateRefreshToken() (string, error) {
 func (s *Service) hashToken(token string) string {
 	hash := sha256.Sum256([]byte(token))
 	return base64.URLEncoding.EncodeToString(hash[:])
+}
+
+// validateJWTSecret validates that the JWT secret meets security requirements
+func validateJWTSecret(secret string) error {
+	if secret == "" {
+		return fmt.Errorf("%w: JWT secret is empty", ErrWeakJWTSecret)
+	}
+
+	if len(secret) < 32 {
+		return fmt.Errorf("%w: JWT secret must be at least 32 characters long (current: %d)", ErrWeakJWTSecret, len(secret))
+	}
+
+	// Check for common weak secrets
+	weakSecrets := []string{
+		"secret",
+		"jwt-secret",
+		"your-secret-key",
+		"change-me",
+		"default",
+		"password",
+		"123456",
+		"abcdef",
+	}
+
+	for _, weak := range weakSecrets {
+		if secret == weak {
+			return fmt.Errorf("%w: JWT secret cannot be a common weak value", ErrWeakJWTSecret)
+		}
+	}
+
+	return nil
 }

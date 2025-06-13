@@ -2,6 +2,8 @@
 .DS_Store
 .vscode
 
+bin/
+
 .env
 .env.*
 !.env.example

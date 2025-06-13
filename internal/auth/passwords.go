@@ -132,6 +132,85 @@ func (s *Service) CreatePasswordResetToken(ctx context.Context, email string) er
 	return nil
 }
 
+// CreatePasswordResetTokenConstantTime creates a password reset token with constant-time behavior
+// to prevent email enumeration attacks. Always performs the same operations regardless of
+// whether the email exists or not.
+func (s *Service) CreatePasswordResetTokenConstantTime(ctx context.Context, email string) error {
+	// Always generate a token to consume the same amount of time
+	token, err := s.generateSecureToken()
+	if err != nil {
+		return fmt.Errorf("generate token: %w", err)
+	}
+	
+	tokenHash := s.hashToken(token)
+	expiresAt := time.Now().Add(1 * time.Hour)
+
+	// Always look up the user
+	user, err := s.queries.GetUserByEmail(ctx, email)
+	userExists := err == nil
+
+	if userExists {
+		// User exists - create the actual reset token
+		err = s.db.Transaction(ctx, func(tx pgx.Tx) error {
+			qtx := s.queries.WithTx(tx)
+
+			err := qtx.InvalidateUserPasswordResetTokens(ctx, user.ID)
+			if err != nil {
+				return fmt.Errorf("invalidate existing tokens: %w", err)
+			}
+
+			_, err = qtx.CreatePasswordResetToken(ctx, db.CreatePasswordResetTokenParams{
+				UserID:    user.ID,
+				TokenHash: tokenHash,
+				ExpiresAt: expiresAt,
+			})
+			if err != nil {
+				return fmt.Errorf("create reset token: %w", err)
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			return fmt.Errorf("transaction failed: %w", err)
+		}
+
+		// TODO: Send reset email with token
+	} else {
+		// User doesn't exist - perform fake work to match timing
+		// Simulate the database operations that would happen for a real user
+		s.performFakePasswordResetWork(ctx, tokenHash, expiresAt)
+		
+		// TODO: Consider sending a fake email or no email to maintain timing
+	}
+
+	// Always return success to prevent email enumeration
+	// The response should be identical regardless of email existence
+	return nil
+}
+
+// performFakePasswordResetWork simulates the database work done for real password resets
+// to maintain constant timing and prevent email enumeration via timing attacks
+func (s *Service) performFakePasswordResetWork(ctx context.Context, tokenHash string, expiresAt time.Time) {
+	// Simulate the work that would be done for a real user
+	// This should take approximately the same time as the real operations
+	
+	// Simulate transaction work by doing equivalent database operations
+	_ = s.db.Transaction(ctx, func(tx pgx.Tx) error {
+		qtx := s.queries.WithTx(tx)
+		
+		// Simulate InvalidateUserPasswordResetTokens by doing a query that will take similar time
+		// Use a nil UUID which will return "no rows found" but consume database time
+		_, _ = qtx.GetUserById(ctx, uuid.Nil)
+		
+		// Simulate the CreatePasswordResetToken operation by doing another database query
+		// This ensures we consume similar time to the real token creation process
+		_, _ = qtx.GetUserById(ctx, uuid.Nil)
+		
+		return nil
+	})
+}
+
 func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) error {
 	tokenHash := s.hashToken(token)
 

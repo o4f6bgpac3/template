@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/o4f6bgpac3/template/cfg"
 	"github.com/o4f6bgpac3/template/internal/audit"
 	"github.com/o4f6bgpac3/template/internal/auth"
 )
@@ -23,14 +24,14 @@ func RequireAuth(authService *auth.Service, auditService *audit.Service) func(ht
 			token := extractToken(r)
 			if token == "" {
 				auditService.LogEventFromRequest(r.Context(), r, audit.EventPermissionDenied, nil, false, nil)
-				http.Error(w, "Missing authorization token", http.StatusUnauthorized)
+				writeJSONError(w, "Missing authorization token", http.StatusUnauthorized)
 				return
 			}
 
 			claims, err := authService.ValidateAccessToken(token)
 			if err != nil {
 				auditService.LogEventFromRequest(r.Context(), r, audit.EventPermissionDenied, nil, false, err)
-				http.Error(w, "Invalid token", http.StatusUnauthorized)
+				writeJSONError(w, "Invalid token", http.StatusUnauthorized)
 				return
 			}
 
@@ -46,7 +47,7 @@ func RequireRole(auditService *audit.Service, roles ...string) func(http.Handler
 			claims, ok := r.Context().Value(UserContextKey).(*auth.Claims)
 			if !ok {
 				auditService.LogEventFromRequest(r.Context(), r, audit.EventPermissionDenied, nil, false, nil)
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				writeJSONError(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
 
@@ -60,7 +61,7 @@ func RequireRole(auditService *audit.Service, roles ...string) func(http.Handler
 			}
 
 			auditService.LogPermissionDenied(r.Context(), r, claims.UserID, "role", strings.Join(roles, ","))
-			http.Error(w, "Forbidden", http.StatusForbidden)
+			writeJSONError(w, "Forbidden", http.StatusForbidden)
 		})
 	}
 }
@@ -71,19 +72,19 @@ func RequirePermission(authService *auth.Service, auditService *audit.Service, r
 			claims, ok := r.Context().Value(UserContextKey).(*auth.Claims)
 			if !ok {
 				auditService.LogEventFromRequest(r.Context(), r, audit.EventPermissionDenied, nil, false, nil)
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				writeJSONError(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
 
 			hasPermission, err := authService.CheckPermission(r.Context(), claims.UserID, resource, action)
 			if err != nil {
-				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				writeJSONError(w, "Internal server error", http.StatusInternalServerError)
 				return
 			}
 
 			if !hasPermission {
 				auditService.LogPermissionDenied(r.Context(), r, claims.UserID, resource, action)
-				http.Error(w, "Forbidden", http.StatusForbidden)
+				writeJSONError(w, "Forbidden", http.StatusForbidden)
 				return
 			}
 
@@ -124,10 +125,27 @@ func extractToken(r *http.Request) string {
 		return bearerToken[7:]
 	}
 
-	cookie, err := r.Cookie("access_token")
+	// Use configured cookie name with secure prefix when in secure context
+	cookieName := cfg.Config.Security.SessionCookieName
+	if cfg.Config.Security.SessionCookieSecure && isSecureContext() {
+		cookieName = "__Secure-" + cookieName
+	}
+
+	cookie, err := r.Cookie(cookieName)
 	if err == nil {
 		return cookie.Value
 	}
 
 	return ""
 }
+
+// isSecureContext checks if we're in a secure context (HTTPS or production)
+// __Secure- prefix should only be used over HTTPS
+func isSecureContext() bool {
+	// In development mode (ENV=0), assume non-secure context for localhost HTTP testing
+	// This allows __Secure- prefix to be skipped for localhost HTTP
+	return cfg.Config.HTTP.BaseURL != "" && 
+		   len(cfg.Config.HTTP.BaseURL) >= 8 &&
+		   (cfg.Config.HTTP.BaseURL[:8] == "https://" || cfg.Config.Env > 0)
+}
+

@@ -7,6 +7,7 @@
     import Sidebar from '$lib/components/layout/Sidebar.svelte';
     import Footer from '$lib/components/layout/Footer.svelte';
     import Toast from "$lib/components/Toast.svelte";
+    import CSRFStatus from '$lib/components/CSRFStatus.svelte';
 
     let {children} = $props();
 
@@ -37,6 +38,7 @@
         </div>
 
         <main class="flex-1 overflow-y-auto m-8">
+            <CSRFStatus/>
             <Toast/>
             {@render children()}
         </main>

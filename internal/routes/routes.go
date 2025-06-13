@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 )
 
@@ -59,12 +60,15 @@ func Setup(r chi.Router, fSys fs.FS, svc *services.Services) {
 					w.Header().Set("Cache-Control", "public, max-age=3600")
 				}
 
-				w.Write(content)
+				if _, err := w.Write(content); err != nil {
+					// Log error but continue - content is already set
+					return
+				}
 				return
 			}
 
 			// File not found, serve index.html (SPA fallback)
-			serveIndexHTML(w, fSys, svc)
+			serveIndexHTML(w, r, fSys, svc)
 		})
 	}
 }
@@ -76,6 +80,9 @@ func api(r chi.Router, svc *services.Services) {
 			_, _ = w.Write([]byte("OK"))
 		})
 
+		// Setup CSRF token endpoint
+		middleware.SetupCSRFRoutes(r)
+
 		// Setup auth routes
 		setupAuthRoutes(r, svc)
 
@@ -85,10 +92,13 @@ func api(r chi.Router, svc *services.Services) {
 			r.Get("/protected", func(w http.ResponseWriter, r *http.Request) {
 				claims, _ := middleware.GetUserFromContext(r.Context())
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]interface{}{
+				if err := json.NewEncoder(w).Encode(map[string]interface{}{
 					"message": "This is a protected route",
 					"user":    claims,
-				})
+				}); err != nil {
+					http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+					return
+				}
 			})
 		})
 
@@ -98,22 +108,58 @@ func api(r chi.Router, svc *services.Services) {
 			r.Use(middleware.RequireRole(svc.Audit, "admin"))
 			r.Get("/admin", func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]interface{}{
+				if err := json.NewEncoder(w).Encode(map[string]interface{}{
 					"message": "Admin access granted",
-				})
+				}); err != nil {
+					http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+					return
+				}
 			})
 		})
 	})
 }
 
-func serveIndexHTML(w http.ResponseWriter, fSys fs.FS, svc *services.Services) {
+func serveIndexHTML(w http.ResponseWriter, r *http.Request, fSys fs.FS, svc *services.Services) {
 	indexHTML, err := fs.ReadFile(fSys, "index.html")
 	if err != nil {
 		svc.Log.Error().Err(err).Msg("Failed to read index.html")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+
+	// Inject CSP nonce into inline scripts
+	htmlWithNonce := injectNonceIntoHTML(string(indexHTML), r)
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	w.Write(indexHTML)
+	if _, err := w.Write([]byte(htmlWithNonce)); err != nil {
+		svc.Log.Error().Err(err).Msg("Failed to write index.html")
+		return
+	}
+}
+
+// injectNonceIntoHTML adds nonce attributes to inline script tags for CSP compliance
+func injectNonceIntoHTML(html string, r *http.Request) string {
+	nonce := middleware.GetCSPNonceFromRequest(r)
+	if nonce == "" {
+		// Should not happen due to fail-secure middleware, but be defensive
+		return html
+	}
+
+	// Regex to find inline script tags that don't already have a nonce
+	scriptRegex := regexp.MustCompile(`<script(?:\s+[^>]*?)?\s*>`)
+	
+	// Replace script tags with nonce-enabled versions
+	return scriptRegex.ReplaceAllStringFunc(html, func(match string) string {
+		// Check if nonce is already present
+		if strings.Contains(match, "nonce=") {
+			return match
+		}
+		
+		// Insert nonce attribute before the closing >
+		if strings.HasSuffix(match, ">") {
+			return strings.TrimSuffix(match, ">") + ` nonce="` + nonce + `">`
+		}
+		return match
+	})
 }

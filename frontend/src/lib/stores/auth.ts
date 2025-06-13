@@ -1,6 +1,7 @@
 import {writable} from 'svelte/store';
 import {browser} from '$app/environment';
 import {API_BASE} from '$lib/api';
+import {csrfFetchWithRetry, handleCSRFError, preloadCSRFToken} from '$lib/csrf';
 
 interface User {
     user_id: string;
@@ -28,12 +29,11 @@ class AuthService {
         auth.update(state => ({...state, loading: true, error: null}));
 
         try {
-            const response = await fetch(`${API_BASE}/api/auth/login`, {
+            const response = await csrfFetchWithRetry(`${API_BASE}/api/auth/login`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                credentials: 'include',
                 body: JSON.stringify({
                     email_or_username: emailOrUsername,
                     password
@@ -48,6 +48,11 @@ class AuthService {
             await this.getCurrentUser();
             return true;
         } catch (error) {
+            // Handle CSRF-specific errors with better user messaging
+            if (error instanceof Error && error.message.includes('CSRF')) {
+                handleCSRFError(error, 'login');
+            }
+            
             auth.update(state => ({
                 ...state,
                 loading: false,
@@ -61,12 +66,11 @@ class AuthService {
         auth.update(state => ({...state, loading: true, error: null}));
 
         try {
-            const response = await fetch(`${API_BASE}/api/auth/register`, {
+            const response = await csrfFetchWithRetry(`${API_BASE}/api/auth/register`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                credentials: 'include',
                 body: JSON.stringify({
                     email,
                     username,
@@ -93,6 +97,11 @@ class AuthService {
 
             return data;
         } catch (error) {
+            // Handle CSRF-specific errors with better user messaging
+            if (error instanceof Error && error.message.includes('CSRF')) {
+                handleCSRFError(error, 'registration');
+            }
+            
             auth.update(state => ({
                 ...state,
                 loading: false,
@@ -104,9 +113,8 @@ class AuthService {
 
     async logout() {
         try {
-            await fetch(`${API_BASE}/api/auth/logout`, {
+            await csrfFetchWithRetry(`${API_BASE}/api/auth/logout`, {
                 method: 'POST',
-                credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json'
                 },
@@ -114,6 +122,8 @@ class AuthService {
             });
         } catch (error) {
             console.error('Logout error:', error);
+            // Don't show CSRF errors for logout as it's not critical
+            // The client-side state will be cleared regardless
         } finally {
             auth.set({user: null, loading: false, error: null});
         }
@@ -147,12 +157,11 @@ class AuthService {
         auth.update(state => ({...state, loading: true, error: null}));
 
         try {
-            const response = await fetch(`${API_BASE}/api/auth/change-password`, {
+            const response = await csrfFetchWithRetry(`${API_BASE}/api/auth/change-password`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                credentials: 'include',
                 body: JSON.stringify({
                     old_password: oldPassword,
                     new_password: newPassword
@@ -167,6 +176,11 @@ class AuthService {
             auth.update(state => ({...state, loading: false, error: null}));
             return await response.json();
         } catch (error) {
+            // Handle CSRF-specific errors with better user messaging
+            if (error instanceof Error && error.message.includes('CSRF')) {
+                handleCSRFError(error, 'password change');
+            }
+            
             auth.update(state => ({
                 ...state,
                 loading: false,
@@ -177,66 +191,89 @@ class AuthService {
     }
 
     async forgotPassword(email: string) {
-        const response = await fetch(`${API_BASE}/api/auth/forgot-password`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({email})
-        });
+        try {
+            const response = await csrfFetchWithRetry(`${API_BASE}/api/auth/forgot-password`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({email})
+            });
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to send reset email');
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to send reset email');
+            }
+
+            return await response.json();
+        } catch (error) {
+            // Handle CSRF-specific errors with better user messaging
+            if (error instanceof Error && error.message.includes('CSRF')) {
+                handleCSRFError(error, 'password reset request');
+            }
+            throw error;
         }
-
-        return await response.json();
     }
 
     async resetPassword(token: string, password: string) {
-        const response = await fetch(`${API_BASE}/api/auth/reset-password`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({token, password})
-        });
+        try {
+            const response = await csrfFetchWithRetry(`${API_BASE}/api/auth/reset-password`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({token, password})
+            });
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to reset password');
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to reset password');
+            }
+
+            return await response.json();
+        } catch (error) {
+            // Handle CSRF-specific errors with better user messaging
+            if (error instanceof Error && error.message.includes('CSRF')) {
+                handleCSRFError(error, 'password reset');
+            }
+            throw error;
         }
-
-        return await response.json();
     }
 
     async verifyEmail(token: string) {
-        const response = await fetch(`${API_BASE}/api/auth/verify-email`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({token})
-        });
+        try {
+            const response = await csrfFetchWithRetry(`${API_BASE}/api/auth/verify-email`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({token})
+            });
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Email verification failed');
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Email verification failed');
+            }
+
+            return await response.json();
+        } catch (error) {
+            // Handle CSRF-specific errors with better user messaging
+            if (error instanceof Error && error.message.includes('CSRF')) {
+                handleCSRFError(error, 'email verification');
+            }
+            throw error;
         }
-
-        return await response.json();
     }
 
     async deleteAccount(password: string) {
         auth.update(state => ({...state, loading: true, error: null}));
 
         try {
-            const response = await fetch(`${API_BASE}/api/auth/delete-account`, {
+            const response = await csrfFetchWithRetry(`${API_BASE}/api/auth/delete-account`, {
                 method: 'DELETE',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                credentials: 'include',
                 body: JSON.stringify({password})
             });
 
@@ -248,6 +285,11 @@ class AuthService {
             auth.set({user: null, loading: false, error: null});
             return await response.json();
         } catch (error) {
+            // Handle CSRF-specific errors with better user messaging
+            if (error instanceof Error && error.message.includes('CSRF')) {
+                handleCSRFError(error, 'account deletion');
+            }
+            
             auth.update(state => ({
                 ...state,
                 loading: false,
@@ -265,5 +307,7 @@ class AuthService {
 export const authService = new AuthService();
 
 if (browser) {
+    // Initialize auth and preload CSRF token
     authService.getCurrentUser();
+    preloadCSRFToken();
 }

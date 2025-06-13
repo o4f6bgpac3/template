@@ -60,6 +60,8 @@ type SecurityConfiguration struct {
 	SessionCookieName     string        `mapstructure:"session_cookie_name"`
 	SessionCookieSameSite string        `mapstructure:"session_cookie_same_site"`
 	SessionCookieSecure   bool          `mapstructure:"session_cookie_secure"`
+	TrustedProxies        []string      `mapstructure:"trusted_proxies"`
+	TrustProxyHeaders     bool          `mapstructure:"trust_proxy_headers"`
 }
 
 func LoadEnv() error {
@@ -111,4 +113,6 @@ func setDefaults(cfg *viper.Viper) {
 	cfg.SetDefault("security.session_cookie_name", "access_token")
 	cfg.SetDefault("security.session_cookie_same_site", "strict")
 	cfg.SetDefault("security.session_cookie_secure", true)
+	cfg.SetDefault("security.trusted_proxies", []string{}) // Empty by default for security
+	cfg.SetDefault("security.trust_proxy_headers", false)   // Disabled by default for security
 }

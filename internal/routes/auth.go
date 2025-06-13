@@ -71,9 +71,8 @@ func setupAuthRoutes(r chi.Router, svc *services.Services) {
 	h := &authHandler{authService: svc.Auth}
 
 	r.Route("/auth", func(r chi.Router) {
-		r.Use(middleware.RateLimit(svc.RateLimitStore,
-			cfg.Config.Security.RateLimitRequests,
-			cfg.Config.Security.RateLimitWindow))
+		// Use enhanced rate limiting with endpoint-specific and user-based limits
+		r.Use(middleware.AuthSpecificRateLimit(svc.RateLimitStore))
 
 		// Public routes
 		r.Post("/register", h.register)
@@ -139,19 +138,25 @@ func (h *authHandler) register(w http.ResponseWriter, r *http.Request) {
 
 		h.setCookie(w, tokens)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"user":   user,
 			"tokens": tokens,
-		})
+		}); err != nil {
+			h.writeError(w, "Failed to encode response", http.StatusInternalServerError, nil)
+			return
+		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"user":    user,
 		"message": "Registration successful. Please check your email for verification.",
-	})
+	}); err != nil {
+		// Status already written, can't change it
+		return
+	}
 }
 
 func (h *authHandler) login(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +183,10 @@ func (h *authHandler) login(w http.ResponseWriter, r *http.Request) {
 
 	h.setCookie(w, tokens)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tokens)
+	if err := json.NewEncoder(w).Encode(tokens); err != nil {
+		h.writeError(w, "Failed to encode response", http.StatusInternalServerError, nil)
+		return
+	}
 }
 
 func (h *authHandler) refresh(w http.ResponseWriter, r *http.Request) {
@@ -196,7 +204,10 @@ func (h *authHandler) refresh(w http.ResponseWriter, r *http.Request) {
 
 	h.setCookie(w, tokens)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tokens)
+	if err := json.NewEncoder(w).Encode(tokens); err != nil {
+		h.writeError(w, "Failed to encode response", http.StatusInternalServerError, nil)
+		return
+	}
 }
 
 func (h *authHandler) logout(w http.ResponseWriter, r *http.Request) {
@@ -223,7 +234,10 @@ func (h *authHandler) getCurrentUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(claims)
+	if err := json.NewEncoder(w).Encode(claims); err != nil {
+		h.writeError(w, "Failed to encode response", http.StatusInternalServerError, nil)
+		return
+	}
 }
 
 func (h *authHandler) logoutAll(w http.ResponseWriter, r *http.Request) {
@@ -274,9 +288,12 @@ func (h *authHandler) changePassword(w http.ResponseWriter, r *http.Request) {
 
 	h.clearCookie(w)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"message": "Password changed successfully. Please log in again.",
-	})
+	}); err != nil {
+		h.writeError(w, "Failed to encode response", http.StatusInternalServerError, nil)
+		return
+	}
 }
 
 func (h *authHandler) deleteAccount(w http.ResponseWriter, r *http.Request) {
@@ -309,9 +326,12 @@ func (h *authHandler) deleteAccount(w http.ResponseWriter, r *http.Request) {
 
 	h.clearCookie(w)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"message": "Account deleted successfully",
-	})
+	}); err != nil {
+		h.writeError(w, "Failed to encode response", http.StatusInternalServerError, nil)
+		return
+	}
 }
 
 func (h *authHandler) forgotPassword(w http.ResponseWriter, r *http.Request) {
@@ -326,22 +346,20 @@ func (h *authHandler) forgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authService.CreatePasswordResetToken(r.Context(), req.Email); err != nil {
-		if errors.Is(err, auth.ErrUserNotFound) {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
-				"message": "If the email exists, a password reset link has been sent.",
-			})
-			return
-		}
+	// Use constant-time password reset to prevent email enumeration attacks
+	if err := h.authService.CreatePasswordResetTokenConstantTime(r.Context(), req.Email); err != nil {
 		h.writeError(w, "Failed to process password reset request", http.StatusInternalServerError, nil)
 		return
 	}
 
+	// Always return the same response regardless of email existence
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"message": "If the email exists, a password reset link has been sent.",
-	})
+	}); err != nil {
+		h.writeError(w, "Failed to encode response", http.StatusInternalServerError, nil)
+		return
+	}
 }
 
 func (h *authHandler) resetPassword(w http.ResponseWriter, r *http.Request) {
@@ -372,9 +390,12 @@ func (h *authHandler) resetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"message": "Password has been reset successfully.",
-	})
+	}); err != nil {
+		h.writeError(w, "Failed to encode response", http.StatusInternalServerError, nil)
+		return
+	}
 }
 
 func (h *authHandler) verifyEmail(w http.ResponseWriter, r *http.Request) {
@@ -395,9 +416,12 @@ func (h *authHandler) verifyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"message": "Email verified successfully.",
-	})
+	}); err != nil {
+		h.writeError(w, "Failed to encode response", http.StatusInternalServerError, nil)
+		return
+	}
 }
 
 func (h *authHandler) resendVerification(w http.ResponseWriter, r *http.Request) {
@@ -412,22 +436,20 @@ func (h *authHandler) resendVerification(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.authService.ResendEmailVerification(r.Context(), req.Email); err != nil {
-		if errors.Is(err, auth.ErrUserNotFound) {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{
-				"message": "If the email exists and is unverified, a verification link has been sent.",
-			})
-			return
-		}
+	// Use constant-time email verification to prevent email enumeration attacks
+	if err := h.authService.ResendEmailVerificationConstantTime(r.Context(), req.Email); err != nil {
 		h.writeError(w, "Failed to resend verification email", http.StatusInternalServerError, nil)
 		return
 	}
 
+	// Always return the same response regardless of email existence or verification status
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"message": "If the email exists and is unverified, a verification link has been sent.",
-	})
+	}); err != nil {
+		h.writeError(w, "Failed to encode response", http.StatusInternalServerError, nil)
+		return
+	}
 }
 
 func (h *authHandler) getActiveSessions(w http.ResponseWriter, r *http.Request) {
@@ -444,9 +466,12 @@ func (h *authHandler) getActiveSessions(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"sessions": sessions,
-	})
+	}); err != nil {
+		h.writeError(w, "Failed to encode response", http.StatusInternalServerError, nil)
+		return
+	}
 }
 
 func (h *authHandler) invalidateSession(w http.ResponseWriter, r *http.Request) {
@@ -529,11 +554,14 @@ func (h *authHandler) getAuditLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"logs":   logs,
 		"limit":  limit,
 		"offset": offset,
-	})
+	}); err != nil {
+		h.writeError(w, "Failed to encode response", http.StatusInternalServerError, nil)
+		return
+	}
 }
 
 func (h *authHandler) getSecurityStats(w http.ResponseWriter, r *http.Request) {
@@ -544,7 +572,10 @@ func (h *authHandler) getSecurityStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	if err := json.NewEncoder(w).Encode(stats); err != nil {
+		h.writeError(w, "Failed to encode response", http.StatusInternalServerError, nil)
+		return
+	}
 }
 
 func (h *authHandler) setCookie(w http.ResponseWriter, tokens *auth.Tokens) {
@@ -556,8 +587,14 @@ func (h *authHandler) setCookie(w http.ResponseWriter, tokens *auth.Tokens) {
 		sameSite = http.SameSiteNoneMode
 	}
 
+	// Add __Secure- prefix when secure flag is true AND request context is secure
+	cookieName := cfg.Config.Security.SessionCookieName
+	if cfg.Config.Security.SessionCookieSecure && isSecureContext() {
+		cookieName = "__Secure-" + cookieName
+	}
+
 	http.SetCookie(w, &http.Cookie{
-		Name:     cfg.Config.Security.SessionCookieName,
+		Name:     cookieName,
 		Value:    tokens.AccessToken,
 		Expires:  tokens.ExpiresAt,
 		HttpOnly: cfg.Config.Security.SessionCookieHTTPOnly,
@@ -576,8 +613,14 @@ func (h *authHandler) clearCookie(w http.ResponseWriter) {
 		sameSite = http.SameSiteNoneMode
 	}
 
+	// Add __Secure- prefix when secure flag is true AND request context is secure
+	cookieName := cfg.Config.Security.SessionCookieName
+	if cfg.Config.Security.SessionCookieSecure && isSecureContext() {
+		cookieName = "__Secure-" + cookieName
+	}
+
 	http.SetCookie(w, &http.Cookie{
-		Name:     cfg.Config.Security.SessionCookieName,
+		Name:     cookieName,
 		Value:    "",
 		Expires:  time.Now().Add(-time.Hour),
 		HttpOnly: cfg.Config.Security.SessionCookieHTTPOnly,
@@ -596,5 +639,19 @@ func (h *authHandler) writeError(w http.ResponseWriter, message string, statusCo
 		Details: details,
 	}
 
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		// If we can't encode the error response, there's not much we can do
+		// The status code has already been set, so just return
+		return
+	}
+}
+
+// isSecureContext checks if we're in a secure context (HTTPS or production)
+// __Secure- prefix should only be used over HTTPS
+func isSecureContext() bool {
+	// In development mode (ENV=0), assume non-secure context for localhost HTTP testing
+	// This allows __Secure- prefix to be skipped for localhost HTTP
+	return cfg.Config.HTTP.BaseURL != "" && 
+		   len(cfg.Config.HTTP.BaseURL) >= 8 &&
+		   (cfg.Config.HTTP.BaseURL[:8] == "https://" || cfg.Config.Env > 0)
 }
